@@ -104,7 +104,7 @@ describe("FileManager", function(){
 		increase storage if the required storage is larger than the available quota but less than that previously
 		granted quota!
 
-		chrome://settings/cookies is your friend to clear all permissions for a subdomain
+		 is your friend to clear all permissions for a subdomain
 	**/
 	it('detects when the approved storage quota is no longer sufficient and asks user for permission to use more', function(){
 		var quotaAvailable = fileManager.getCurrentQuota();
@@ -123,7 +123,7 @@ describe("FileManager", function(){
 		});
 
 		waitsFor(function(){
-			return quotaRequestSpy.calls.length === 2;
+			return quotaRequestSpy.calls.length === 2 || saveComplete === true;
 			//user must not approve request (2nd request)
 		}, 'the file save operation to complete', 1500);
 
@@ -225,28 +225,26 @@ describe("FileManager", function(){
 		});
 
 		it('is retrieved successfully', function(){
-			var retrieveResult = null,
-				retrieveLength = null,
-				retrieveComplete = null;
+			var retrieveSuccess = false, fileResult;
 			
 			runs(function(){
-				fileManager.retrieveFiles(
+				fileManager.retrieveFile(
 					'myfolder',
-					[{nodeName:'whatever', fileName: 'fakefile'}],
+					{newName:'whatever', fileName: 'fakefile'},
 					{
-						success: function(files){retrieveResult = 'success'; retrieveComplete = true; retrieveLength = files.length;},
-						error: function(){retrieveResult = 'error'; retrieveComplete = true;}
+						success: function( fileO ){ retrieveSuccess = true; fileResult = fileO.file; },
+						error: function(){ retrieveResult = 'error'; retrieveComplete = true; }
 					}
 				);
 			});
 
 			waitsFor(function(){
-				return retrieveResult;
+				return retrieveSuccess;
 			}, 'file retrieve attempt to complete', 1000);
 
 			runs(function(){
-				expect(retrieveResult).toEqual('success');
-				expect(retrieveLength).toEqual(1);
+				expect( retrieveSuccess ).toBe( true );
+				expect( fileResult instanceof File ).toBe( true );
 			});
 		});
 
