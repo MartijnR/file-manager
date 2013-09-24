@@ -17,56 +17,58 @@
  * limitations under the License.
  */
 
-/*jslint browser:true, devel:true, jquery:true, smarttabs:true sub:true*/
-
 /**
  * FileManager Class for PERSISTENT file storage, used to storage file inputs for later submission
  * Could be expanded, if ever needed, to use TEMPORARY file storage as well
  *
  * @constructor
  */
-function FileManager() {
+
+function FileManager( ) {
   "use strict";
 
-  var fs, requestQuota, requestFileSystem, errorHandler, setCurrentQuotaUsed, traverseAll, retrieveFile, retrieveFileFromFileEntry, dirName, dirPrefix,
+  var supported, fs, init, requestQuota, requestFileSystem, errorHandler, setCurrentQuotaUsed, traverseAll, retrieveFile, retrieveFileEntry, retrieveFileFromFileEntry, currentDir, getDirPrefix,
     currentQuota = null,
     currentQuotaUsed = null,
     DEFAULTBYTESREQUESTED = 100 * 1024 * 1024;
 
-  this.getCurrentQuota = function(){return currentQuota;};
-  this.getCurrentQuotaUsed = function(){return currentQuotaUsed;};
-  this.getFS = function(){return fs;};
-  
+  this.getCurrentQuota = function( ) {
+    return currentQuota;
+  };
+  this.getCurrentQuotaUsed = function( ) {
+    return currentQuotaUsed;
+  };
+  this.getFS = function( ) {
+    return fs;
+  };
+
   /**
    * Initializes the File Manager
-   * @param  {string}                 directory name of directory to store files in
-   * @param  {{success:Function, error:Function}} callbacks callback functions (error, and success)
-   * @return {boolean}                    returns true/false if File API is supported by browser
+   * @return {boolean} returns true/false if File API is supported by browser
    */
-  this.init = function( directory, callbacks ) {
-    if (this.isSupported() && directory && directory.length > 0){
+  init = function( ) {
+    //check if filesystem API is supported by browser
+    window.requestFileSystem = window.requestFileSystem || window.webkitRequestFileSystem;
+    window.resolveLocalFileSystemURL = window.resolveLocalFileSystemURL || window.webkitResolveLocalFileSystemURL;
+    //window.storageInfo = window.storageInfo || window.webkitStorageInfo;
+    supported = ( typeof window.requestFileSystem !== 'undefined' && typeof window.resolveLocalFileSystemURL !== 'undefined' && typeof navigator.webkitPersistentStorage !== 'undefined' );
+    console.log( 'supported: ', supported );
+    if ( supported ) {
       var that = this;
-      dirName = directory;
-      dirPrefix = '/'+directory+'/';
-
-      setCurrentQuotaUsed();
+      setCurrentQuotaUsed( );
       requestQuota(
-        DEFAULTBYTESREQUESTED,
-        {
-          success: function( grantedBytes ){
+        DEFAULTBYTESREQUESTED, {
+          success: function( grantedBytes ) {
             requestFileSystem(
-              grantedBytes,
-              {
-                success: function( fsys ){
+              grantedBytes, {
+                success: function( fsys ) {
                   fs = fsys;
-                  that.createDir(
-                    dirName,
-                    callbacks
-                  );
+                  console.log( 'got filesystem', fs );
+                  $( document ).trigger( 'filesystemready' );
                 },
-                error: function( e ){
+                error: function( e ) {
                   callbacks.error( e );
-                  errorHandler(e);
+                  errorHandler( e );
                 }
               }
             );
@@ -74,13 +76,35 @@ function FileManager() {
           error: errorHandler
         }
       );
-      //TODO: move this to final success eventhandler?
-      $(document).on('submissionsuccess', function(ev, recordName, instanceID){
-        that.deleteDir(instanceID);
-      });
       return true;
+    } else {
+      console.log( 'filesystem API not supported in this browser' );
+      return false;
     }
-    else{
+  };
+
+  /**
+   * @param  {string}                             dirName name of directory to store files in
+   * @param  {{success:Function, error:Function}} callbacks callback functions (error, and success)
+   */
+  this.setDir = function( dirName, callbacks ) {
+    var currentSuccessCb = callbacks.success,
+      that = this;
+    if ( dirName && dirName.length > 0 ) {
+      callbacks.success = function( dirEntry ) {
+        currentDir = dirName;
+        currentSuccessCb( );
+      };
+      if ( typeof fs == "undefined" ) {
+        console.log( 'fs not yet defined, waiting for filesystemready event' );
+        $( document ).on( 'filesystemready', function( ) {
+          that.createDir( dirName, callbacks );
+        } );
+      } else {
+        this.createDir( dirName, callbacks );
+      }
+    } else {
+      console.error( 'directory name empty or missing' );
       return false;
     }
   };
@@ -89,11 +113,17 @@ function FileManager() {
    * Checks if File API is supported by browser
    * @return {boolean}
    */
-  this.isSupported = function() {
-    window.requestFileSystem = window.requestFileSystem || window.webkitRequestFileSystem;
-    window.resolveLocalFileSystemURL = window.resolveLocalFileSystemURL || window.webkitResolveLocalFileSystemURL;
-    window.storageInfo = window.storageInfo || window.webkitStorageInfo;
-    return (typeof window.requestFileSystem !== 'undefined' && typeof window.resolveLocalFileSystemURL !== 'undefined' && typeof window.storageInfo !== 'undefined');
+  this.isSupported = function( ) {
+    return supported;
+  };
+
+  /**
+   * returns dir prefix to be use to build a filesystem path
+   * @param  {string=} dirName the dirName to use if provided, otherwise the current directory name is used
+   * @return {string} returns the path prefix or '/' (root)
+   */
+  getDirPrefix = function( dirName ) {
+    return ( dirName ) ? '/' + dirName + '/' : ( currentDir ) ? '/' + currentDir + '/' : '/';
   };
 
   /**
@@ -102,11 +132,10 @@ function FileManager() {
    * @param  {Object.<string, Function>}  callbacks      callback functions (error, and success)
    */
   requestQuota = function( bytesRequested, callbacks ) {
-    console.log('requesting persistent filesystem quota');
-    $(document).trigger('quotarequest', bytesRequested); //just to facilitate testing
-    window.storageInfo.requestQuota(
-      window.storageInfo.PERSISTENT,
-      bytesRequested ,
+    console.log( 'requesting persistent filesystem quota' );
+    $( document ).trigger( 'quotarequest', bytesRequested ); //just to facilitate testing
+    navigator.webkitPersistentStorage.requestQuota(
+      bytesRequested,
       //successhandler is called immediately if asking for increase in quota
       callbacks.success,
       callbacks.error
@@ -119,20 +148,19 @@ function FileManager() {
    * @param  {Object.<string, Function>} callbacks   callback functions (error, and success)
    */
   requestFileSystem = function( bytes, callbacks ) {
-    console.log('quota for persistent storage granted in MegaBytes: '+bytes/(1024 * 1024));
-    if (bytes > 0){
+    console.log( 'quota for persistent storage granted in MegaBytes: ' + bytes / ( 1024 * 1024 ) );
+    if ( bytes > 0 ) {
       currentQuota = bytes;
       window.requestFileSystem(
-        window.storageInfo.PERSISTENT,
+        window.PERSISTENT,
         bytes,
         callbacks.success,
         callbacks.error
       );
-    }
-    else{
+    } else {
       //actually not correct to treat this as an error
-      console.error('User did not approve storage of local data using the File API');
-      callbacks.error();
+      console.error( 'User did not approve storage of local data using the File API' );
+      callbacks.error( );
     }
   };
 
@@ -143,8 +171,8 @@ function FileManager() {
   errorHandler = function( e ) {
     var msg = '';
 
-    if (typeof e !== 'undefined'){
-      switch (e.code) {
+    if ( typeof e !== 'undefined' ) {
+      switch ( e.code ) {
         case window.FileError.QUOTA_EXCEEDED_ERR:
           msg = 'QUOTA_EXCEEDED_ERR';
           break;
@@ -165,25 +193,23 @@ function FileManager() {
           break;
       }
     }
-    console.log('Error occurred: ' + msg);
-    if (typeof console.trace !== 'undefined') console.trace();
+    console.log( 'Error occurred: ' + msg );
+    if ( typeof console.trace !== 'undefined' ) console.trace( );
   };
 
   /**
    * Requests the amount of storage used (asynchronously) and sets variable (EXPERIMENTAL/UNSTABLE API)
    */
-  setCurrentQuotaUsed = function() {
-    if (typeof window.storageInfo.queryUsageAndQuota !== 'undefined'){
-      window.storageInfo.queryUsageAndQuota(
-        window.storageInfo.PERSISTENT,
-        function(quotaUsed){
+  setCurrentQuotaUsed = function( ) {
+    if ( typeof navigator.webkitPersistentStorage.queryUsageAndQuota !== 'undefined' ) {
+      navigator.webkitPersistentStorage.queryUsageAndQuota(
+        function( quotaUsed ) {
           currentQuotaUsed = quotaUsed;
         },
         errorHandler
       );
-    }
-    else {
-      console.error('browser does not support queryUsageAndQuota');
+    } else {
+      console.error( 'browser does not support queryUsageAndQuota' );
     }
   };
 
@@ -194,115 +220,63 @@ function FileManager() {
    */
   this.saveFile = function( file, callbacks ) {
     var that = this;
-    fs.root.getFile(
-      dirPrefix + file.name,
-      {
-        create: true,
-        exclusive: false
-      },
-      function( fileEntry ){
-        fileEntry.createWriter(function( fileWriter ) {
-          fileWriter.write( file );
-          fileWriter.onwriteend = function( e ){
-            //if a file write does not complete because the file is larger than the granted quota
-            //the onwriteend event still fires. (This may be a browser bug.)
-            //so we're checking if the complete file was saved and if not, do nothing and assume
-            //that the onerror event will fire
-            if ( e.total === e.loaded ){
-              //console.log('write completed', e);
-              setCurrentQuotaUsed();
-              console.log('complete file stored, with persistent url:'+fileEntry.toURL());
-              callbacks.success(fileEntry.toURL());
-            }
-          };
-          fileWriter.onerror = function(e){
-            var newBytesRequest,
-              targetError = e.target.error;
-            if (targetError instanceof FileError && targetError.code === window.FileError.QUOTA_EXCEEDED_ERR){
-              newBytesRequest = ((e.total * 5) < DEFAULTBYTESREQUESTED) ? currentQuota + DEFAULTBYTESREQUESTED : currentQuota + (5 * e.total);
-              console.log('Required storage exceeding quota, going to request more, in bytes: '+newBytesRequest);
-              requestQuota(
-                newBytesRequest,
-                {
-                  success: function( bytes ){
-                    console.log('request for additional quota approved! (quota: '+bytes+' bytes)');
-                    currentQuota = bytes;
-                    that.saveFile( file, callbacks );
-                  },
-                  error: callbacks.error
-                }
-              );
-            }
-            else {
-              callbacks.error( e );
-            }
-          };
-        }, callbacks.error);
-      },
-      callbacks.error
-    );
-  };
 
-  /**
-   * Obtains specified files from a specified directory (asynchronously)
-   * @param {string}                                      directoryName   directory to look in for files
-   * @param {Array.<{newName: string, fileName: string}>} files           array of objects with file properties
-   * @param {{success:Function, error:Function}}          callbacks       callback functions (error, and success)
-   */
-  /*this.retrieveFiles = function( directoryName, files, callbacks ) {
-    var i, retrievedFiles = [], failedFiles = [],
-      pathPrefix = (directoryName) ? '/'+directoryName+'/' : dirPrefix,
-      callbacksForFileEntry = {
-        success: function( fileEntry ){
-          retrieveFileFromFileEntry( fileEntry, {
-              success: function( file ){
-                console.debug('retrieved file! ', file);
-                var index;
-                //TODO:  THIS WILL FAIL WHEN FILENAME OCCURS TWICE, problem?
-                $.each( files, function( j, item ) {
-                  if ( item.fileName === file.name ) { 
-                    retrievedFiles.push({
-                      newName: files[j].newName,
-                      fileName: files[j].fileName,
-                      file: file
-                    });
-                  }
-                });
-                console.log('value of requested files index i in successhandler: '+i);
-                //if (file.name === files[files.length - 1].fileName){
-                if ( retrievedFiles.length + failedFiles.length === files.length ){
-                  console.log('files to return with success handler: ', retrievedFiles);
-                  callbacks.success(retrievedFiles);
-                }
-              },
-              error: function( e, fullPath ) {
-                failedFiles.push[fullPath];
-                if ( retrievedFiles.length + failedFiles.length === files.length ){
-                  console.log('though error occurred with at least one file, files to return with success handler: ', retrievedFiles);
-                  callbacks.success(retrievedFiles);
-                }
-                callbacks.error();
-              }
-          });
-        },
-        error: callbacks.error
-      };
-
-    if ( files.length === 0 ){
-      console.log('files length is 0, calling success handler with empty array');
-      callbacks.success([]);
+    if ( typeof fs == "undefined" ) {
+      $( document ).on( 'filesystemready', function( ) {
+        saveThisFile( );
+      } );
+    } else {
+      saveThisFile( );
     }
 
-    for ( i = 0 ; i<files.length ; i++ ){
-      this.retrieveFileEntry(
-        pathPrefix+files[i].fileName,
-        {
-          success: callbacksForFileEntry.success,
-          error: callbacksForFileEntry.error
-        }
+    function saveThisFile( ) {
+      console.log( 'saving file with url: ', getDirPrefix( ) + file.name );
+      fs.root.getFile(
+        getDirPrefix( ) + file.name, {
+          create: true,
+          exclusive: false
+        },
+        function( fileEntry ) {
+          fileEntry.createWriter( function( fileWriter ) {
+            fileWriter.write( file );
+            fileWriter.onwriteend = function( e ) {
+              //if a file write does not complete because the file is larger than the granted quota
+              //the onwriteend event still fires. (This may be a browser bug.)
+              //so we're checking if the complete file was saved and if not, do nothing and assume
+              //that the onerror event will fire
+              if ( e.total === e.loaded ) {
+                //console.log('write completed', e);
+                setCurrentQuotaUsed( );
+                console.log( 'complete file stored, with persistent url:' + fileEntry.toURL( ) );
+                callbacks.success( fileEntry.toURL( ) );
+              }
+            };
+            fileWriter.onerror = function( e ) {
+              var newBytesRequest,
+                targetError = e.target.error;
+              if ( targetError instanceof FileError && targetError.code === window.FileError.QUOTA_EXCEEDED_ERR ) {
+                newBytesRequest = ( ( e.total * 5 ) < DEFAULTBYTESREQUESTED ) ? currentQuota + DEFAULTBYTESREQUESTED : currentQuota + ( 5 * e.total );
+                console.log( 'Required storage exceeding quota, going to request more, in bytes: ' + newBytesRequest );
+                requestQuota(
+                  newBytesRequest, {
+                    success: function( bytes ) {
+                      console.log( 'request for additional quota approved! (quota: ' + bytes + ' bytes)' );
+                      currentQuota = bytes;
+                      that.saveFile( file, callbacks );
+                    },
+                    error: callbacks.error
+                  }
+                );
+              } else {
+                callbacks.error( e );
+              }
+            };
+          }, callbacks.error );
+        },
+        callbacks.error
       );
     }
-  };*/
+  };
 
   /**
    * Obtains specified files from a specified directory (asynchronously)
@@ -311,28 +285,27 @@ function FileManager() {
    * @param {{success:Function, error:Function}}  callbacks       callback functions (error, and success)
    */
   this.retrieveFile = function( directoryName, fileO, callbacks ) {
+    //check if filesystem is ready??
     var retrievedFile = {},
-      pathPrefix = ( directoryName ) ? '/'+directoryName+'/' : dirPrefix,
+      pathPrefix = getDirPrefix( directoryName ),
       callbacksForFileEntry = {
         success: function( fileEntry ) {
           retrieveFileFromFileEntry( fileEntry, {
-            success: function( file ){
+            success: function( file ) {
               console.debug( 'retrieved file! ', file );
               fileO.file = file;
               callbacks.success( fileO );
             },
-            error: function( e, fullPath ){
-              callbacks.error();
-            }
-          });
+            error: callbacks.error
+          } );
         },
         error: callbacks.error
       };
 
-    this.retrieveFileEntry( pathPrefix + fileO.fileName, {
+    retrieveFileEntry( pathPrefix + fileO.fileName, {
       success: callbacksForFileEntry.success,
       error: callbacksForFileEntry.error
-    });
+    } );
   };
 
   /**
@@ -340,15 +313,15 @@ function FileManager() {
    * @param  {string}                             fullPath    full filesystem path to the file
    * @param {{success:Function, error:Function}}  callbacks   callback functions (error, and success)
    */
-  this.retrieveFileEntry = function( fullPath, callbacks ) {
-    console.debug('retrieving fileEntry for: '+fullPath);
+  retrieveFileEntry = function( fullPath, callbacks ) {
+    console.debug( 'retrieving fileEntry for: ' + fullPath );
     fs.root.getFile( fullPath, {},
-      function( fileEntry ){
-        console.log( 'fileEntry retrieved: ',fileEntry, 'persistent URL: ',fileEntry.toURL() );
-        callbacks.success(fileEntry);
+      function( fileEntry ) {
+        console.log( 'fileEntry retrieved: ', fileEntry, 'persistent URL: ', fileEntry.toURL( ) );
+        callbacks.success( fileEntry );
       },
-      function( e, fullPath ){
-        console.error( 'file with path: '+fullPath+' not found', e ),
+      function( e ) {
+        console.error( 'file with path: ' + fullPath + ' not found', e );
         callbacks.error( e );
       }
     );
@@ -369,23 +342,27 @@ function FileManager() {
    * @param {{success:Function, error:Function}}  callbacks       callback functions (error, and success)
    */
   this.deleteFile = function( fileName, callbacks ) {
+    //check if filesystem is ready?
     //console.log('amount of storage used: '+this.getStorageUsed());
     console.log( 'deleting file: ' + fileName );
-    callbacks = callbacks || { success: function(){}, error: function(){} };
+    callbacks = callbacks || {
+      success: function( ) {},
+      error: function( ) {}
+    };
     //console.log('amount of storage used: '+this.getStorageUsed());
-    fs.root.getFile( dirPrefix + fileName, {
+    fs.root.getFile( getDirPrefix( ) + fileName, {
         create: false
       },
-      function(fileEntry){
-        fileEntry.remove(function(){
-          setCurrentQuotaUsed();
-          console.log(fileName+' removed from file system');
-          callbacks.success();
-        });
+      function( fileEntry ) {
+        fileEntry.remove( function( ) {
+          setCurrentQuotaUsed( );
+          console.log( fileName + ' removed from file system' );
+          callbacks.success( );
+        } );
       },
-      function(e){
-        errorHandler(e);
-        callbacks.error();
+      function( e ) {
+        errorHandler( e );
+        callbacks.error( );
       }
     );
   };
@@ -395,41 +372,41 @@ function FileManager() {
    * @param  {string}                                 name      name of directory
    * @param  {{success: Function, error: Function}}   callbacks callback functions (error, and success)
    */
-  this.createDir = function( name, callbacks ){
+  this.createDir = function( name, callbacks ) {
     var that = this;
 
-    callbacks = callbacks || { success: function(){}, error: function(){} };
+    callbacks = callbacks || {
+      success: function( ) {},
+      error: function( ) {}
+    };
     fs.root.getDirectory( name, {
         create: true
       },
-      function(dirEntry) {
-        setCurrentQuotaUsed();
-        console.log('Directory: '+name+' created (or found)', dirEntry);
-        callbacks.success();
+      function( dirEntry ) {
+        setCurrentQuotaUsed( );
+        console.log( 'Directory: ' + name + ' created (or found)', dirEntry );
+        callbacks.success( );
       },
-      function(e) {
-        var newBytesRequest,
-          targetError = e.target.error;
-        //TODO: test this
-        if (targetError instanceof FileError && targetError.code === window.FileError.QUOTA_EXCEEDED_ERR ){
-          console.log('Required storage exceeding quota, going to request more.');
-          newBytesRequest = ((e.total * 5) < DEFAULTBYTESREQUESTED) ? currentQuota + DEFAULTBYTESREQUESTED : currentQuota + (5 * e.total);
+      function( e ) {
+        console.log( 'error during creation of directory', e );
+        var newBytesRequest; //,
+        if ( e instanceof FileError && e.code === window.FileError.QUOTA_EXCEEDED_ERR ) {
+          console.log( 'Required storage exceeding quota, going to request more.' );
+          newBytesRequest = ( ( e.total * 5 ) < DEFAULTBYTESREQUESTED ) ? currentQuota + DEFAULTBYTESREQUESTED : currentQuota + ( 5 * e.total );
           requestQuota(
-            newBytesRequest,
-            {
+            newBytesRequest, {
               success: function( bytes ) {
                 currentQuota = bytes;
-                that.createDir(name, callbacks);
+                that.createDir( name, callbacks );
               },
               error: callbacks.error
             }
           );
-        }
-        else{
-          callbacks.error(e);
+        } else {
+          callbacks.error( e );
         }
       }
-      //TODO: ADD similar request for additional storage if FileError.QUOTA_EXCEEEDED_ERR is thrown as don in saveFile()
+      //TODO: ADD similar request for additional storage if FileError.QUOTA_EXCEEEDED_ERR is thrown as done in saveFile()
     );
   };
 
@@ -439,18 +416,22 @@ function FileManager() {
    * @param {{success: Function, error: Function}}    callbacks   callback functions (error, and success)
    */
   this.deleteDir = function( name, callbacks ) {
-    callbacks = callbacks || { success: function(){}, error: function(){} };
-    console.log('going to delete directory: '+name);
+    //check if filesystem is ready?
+    callbacks = callbacks || {
+      success: function( ) {},
+      error: function( ) {}
+    };
+    console.log( 'going to delete directory: ' + name );
     fs.root.getDirectory( name, {},
-      function(dirEntry){
+      function( dirEntry ) {
         dirEntry.removeRecursively(
-          function(){
-            setCurrentQuotaUsed();
-            callbacks.success();
+          function( ) {
+            setCurrentQuotaUsed( );
+            callbacks.success( );
           },
-          function(e){
-            errorHandler(e);
-            callbacks.error();
+          function( e ) {
+            errorHandler( e );
+            callbacks.error( );
           }
         );
       },
@@ -463,29 +444,38 @@ function FileManager() {
    * @param {Function=} callbackComplete  function to call when complete
    */
   this.deleteAll = function( callbackComplete ) {
-    callbackComplete = callbackComplete || function(){};
+    callbackComplete = callbackComplete || function( ) {};
+
     var process = {
-      entryFound : function( entry ){
-        if ( entry.isDirectory ){
+      entryFound: function( entry ) {
+        if ( entry.isDirectory ) {
           entry.removeRecursively(
-            function(){
-              setCurrentQuotaUsed();
-              console.log('Directory: '+entry.name+ ' deleted');
+            function( ) {
+              setCurrentQuotaUsed( );
+              console.log( 'Directory: ' + entry.name + ' deleted' );
             },
             errorHandler
           );
         } else {
-          entry.remove(function(){
-              setCurrentQuotaUsed();
-              console.log('File: '+entry.name+ ' deleted');
+          entry.remove( function( ) {
+              setCurrentQuotaUsed( );
+              console.log( 'File: ' + entry.name + ' deleted' );
             },
             errorHandler
           );
         }
       },
-      complete : callbackComplete
+      complete: callbackComplete
     };
-    traverseAll( process );
+
+    //check if filesystem is ready
+    if ( typeof fs == "undefined" ) {
+      $( document ).on( 'filesystemready', function( ) {
+        traverseAll( process );
+      } );
+    } else {
+      traverseAll( process );
+    }
   };
 
   /**
@@ -493,23 +483,23 @@ function FileManager() {
    * @param {Function=} callbackComplete  function to call when complete
    */
   this.listAll = function( callbackComplete ) {
-    callbackComplete = callbackComplete || function(){};
-    var entries = [],
+    //check if filesystem is ready?
+    callbackComplete = callbackComplete || function( ) {};
+    var entries = [ ],
       process = {
-        entryFound : function( entry ){
-          if ( entry.isDirectory ){
-            entries.push('folder: '+entry.name);
-          }
-          else{
-            entries.push( 'file: '+entry.name );
+        entryFound: function( entry ) {
+          if ( entry.isDirectory ) {
+            entries.push( 'folder: ' + entry.name );
+          } else {
+            entries.push( 'file: ' + entry.name );
           }
         },
-        complete : function(){
-          console.log('entries: ', entries);
-          callbackComplete();
+        complete: function( ) {
+          console.log( 'entries: ', entries );
+          callbackComplete( );
         }
-    };
-    traverseAll(process);
+      };
+    traverseAll( process );
   };
 
   /**
@@ -518,24 +508,24 @@ function FileManager() {
    */
   traverseAll = function( process ) {
     var entry, type,
-      dirReader = fs.root.createReader();
-    
+      dirReader = fs.root.createReader( );
+
     // Call the reader.readEntries() until no more results are returned.
-    var readEntries = function() {
-      dirReader.readEntries (function(results) {
-        if ( !results.length ){
-          process.complete();
-        }
-        else {
-          for ( var i=0 ; i<results.length ; i++ ){
-            entry = results[i];
-            process.entryFound(entry);
+    var readEntries = function( ) {
+      dirReader.readEntries( function( results ) {
+        if ( !results.length ) {
+          process.complete( );
+        } else {
+          for ( var i = 0; i < results.length; i++ ) {
+            entry = results[ i ];
+            process.entryFound( entry );
           }
-          readEntries();
+          readEntries( );
         }
-      }, errorHandler);
+      }, errorHandler );
     };
-    readEntries();
+    readEntries( );
   };
+
+  init( );
 }
-  
