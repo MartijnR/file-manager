@@ -2,7 +2,7 @@
  * This library copies liberally from http://www.html5rocks.com/en/tutorials/file/filesystem/#toc-filesystemurls
  * by Eric Bidelman. Thanks a lot, Eric!
  *
- * Copyright 2012 Martijn van de Rijdt & Modilabs
+ * Copyright 2013 Martijn van de Rijdt & Modi Labs
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -24,23 +24,28 @@
  * @constructor
  */
 
-function FileManager( ) {
+define( [ 'jquery' ], function( $ ) {
   "use strict";
 
-  var supported, fs, init, requestQuota, requestFileSystem, errorHandler, setCurrentQuotaUsed, traverseAll, retrieveFile, retrieveFileEntry, retrieveFileFromFileEntry, currentDir, getDirPrefix,
+  var getCurrentQuota, getCurrentQuotaUsed, supported, isSupported, fs, init, setDir, requestQuota,
+    requestFileSystem, errorHandler, setCurrentQuotaUsed, traverseAll, saveFile, retrieveFile,
+    retrieveFileEntry, retrieveFileFromFileEntry, deleteFile, createDir, deleteDir, currentDir,
+    deleteAll, getDirPrefix, listAll,
     currentQuota = null,
     currentQuotaUsed = null,
     DEFAULTBYTESREQUESTED = 100 * 1024 * 1024;
 
-  this.getCurrentQuota = function( ) {
+  console.log( 'in file manager' );
+
+  getCurrentQuota = function( ) {
     return currentQuota;
   };
-  this.getCurrentQuotaUsed = function( ) {
+  getCurrentQuotaUsed = function( ) {
     return currentQuotaUsed;
   };
-  this.getFS = function( ) {
-    return fs;
-  };
+  //function getFS ( ) {
+  //  return fs;
+  //};
 
   /**
    * Initializes the File Manager
@@ -50,7 +55,6 @@ function FileManager( ) {
     //check if filesystem API is supported by browser
     window.requestFileSystem = window.requestFileSystem || window.webkitRequestFileSystem;
     window.resolveLocalFileSystemURL = window.resolveLocalFileSystemURL || window.webkitResolveLocalFileSystemURL;
-    //window.storageInfo = window.storageInfo || window.webkitStorageInfo;
     supported = ( typeof window.requestFileSystem !== 'undefined' && typeof window.resolveLocalFileSystemURL !== 'undefined' && typeof navigator.webkitPersistentStorage !== 'undefined' );
     console.log( 'supported: ', supported );
     if ( supported ) {
@@ -67,7 +71,6 @@ function FileManager( ) {
                   $( document ).trigger( 'filesystemready' );
                 },
                 error: function( e ) {
-                  callbacks.error( e );
                   errorHandler( e );
                 }
               }
@@ -87,7 +90,7 @@ function FileManager( ) {
    * @param  {string}                             dirName name of directory to store files in
    * @param  {{success:Function, error:Function}} callbacks callback functions (error, and success)
    */
-  this.setDir = function( dirName, callbacks ) {
+  setDir = function( dirName, callbacks ) {
     var currentSuccessCb = callbacks.success,
       that = this;
     if ( dirName && dirName.length > 0 ) {
@@ -113,7 +116,7 @@ function FileManager( ) {
    * Checks if File API is supported by browser
    * @return {boolean}
    */
-  this.isSupported = function( ) {
+  isSupported = function( ) {
     return supported;
   };
 
@@ -218,7 +221,7 @@ function FileManager( ) {
    * @param  {Blob}                       file      File object from input field
    * @param  {Object.<string, Function>}  callbacks callback functions (error, and success)
    */
-  this.saveFile = function( file, callbacks ) {
+  saveFile = function( file, callbacks ) {
     var that = this;
 
     if ( typeof fs == "undefined" ) {
@@ -284,7 +287,7 @@ function FileManager( ) {
    * @param {{newName: string, fileName: string}} fileO           object of file properties
    * @param {{success:Function, error:Function}}  callbacks       callback functions (error, and success)
    */
-  this.retrieveFile = function( directoryName, fileO, callbacks ) {
+  retrieveFile = function( directoryName, fileO, callbacks ) {
     //check if filesystem is ready??
     var retrievedFile = {},
       pathPrefix = getDirPrefix( directoryName ),
@@ -341,7 +344,7 @@ function FileManager( ) {
    * @param {string}                              fileName        file name
    * @param {{success:Function, error:Function}}  callbacks       callback functions (error, and success)
    */
-  this.deleteFile = function( fileName, callbacks ) {
+  deleteFile = function( fileName, callbacks ) {
     //check if filesystem is ready?
     //console.log('amount of storage used: '+this.getStorageUsed());
     console.log( 'deleting file: ' + fileName );
@@ -372,7 +375,7 @@ function FileManager( ) {
    * @param  {string}                                 name      name of directory
    * @param  {{success: Function, error: Function}}   callbacks callback functions (error, and success)
    */
-  this.createDir = function( name, callbacks ) {
+  createDir = function( name, callbacks ) {
     var that = this;
 
     callbacks = callbacks || {
@@ -415,7 +418,7 @@ function FileManager( ) {
    * @param {string}                                  name        name of directory
    * @param {{success: Function, error: Function}}    callbacks   callback functions (error, and success)
    */
-  this.deleteDir = function( name, callbacks ) {
+  deleteDir = function( name, callbacks ) {
     //check if filesystem is ready?
     callbacks = callbacks || {
       success: function( ) {},
@@ -443,7 +446,7 @@ function FileManager( ) {
    * Deletes all files stored (for a subsubdomain)
    * @param {Function=} callbackComplete  function to call when complete
    */
-  this.deleteAll = function( callbackComplete ) {
+  deleteAll = function( callbackComplete ) {
     callbackComplete = callbackComplete || function( ) {};
 
     var process = {
@@ -482,7 +485,7 @@ function FileManager( ) {
    * Lists all files/folders in root (function may not be required)
    * @param {Function=} callbackComplete  function to call when complete
    */
-  this.listAll = function( callbackComplete ) {
+  listAll = function( callbackComplete ) {
     //check if filesystem is ready?
     callbackComplete = callbackComplete || function( ) {};
     var entries = [ ],
@@ -528,4 +531,20 @@ function FileManager( ) {
   };
 
   init( );
-}
+
+  return {
+    init: init,
+    isSupported: isSupported,
+    setDir: setDir,
+    getCurrentQuota: getCurrentQuota,
+    getCurrentQuotaUsed: getCurrentQuotaUsed,
+    saveFile: saveFile,
+    retrieveFile: retrieveFile,
+    deleteFile: deleteFile,
+    createDir: createDir,
+    deleteDir: deleteDir,
+    deleteAll: deleteAll,
+    listAll: listAll
+  };
+
+} );
