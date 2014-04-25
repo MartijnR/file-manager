@@ -28,9 +28,10 @@ define( [ 'jquery' ], function( $ ) {
     "use strict";
 
     var getCurrentQuota, getCurrentQuotaUsed, supported, isSupported, fs, init, setDir, requestQuota,
-        requestFileSystem, errorHandler, setCurrentQuotaUsed, traverseAll, saveFile, retrieveFile,
+        requestFileSystem, errorHandler, setCurrentQuotaUsed, _traverseAll, saveFile, retrieveFile,
         retrieveFileUrl, retrieveFileEntry, retrieveFileFromFileEntry, deleteFile, createDir, deleteDir, currentDir,
-        deleteAll, getDirPrefix, listAll,
+        deleteAll, getDirPrefix, listAll, getFilesystem, filesystemReady,
+        deferred = $.Deferred(),
         currentQuota = null,
         currentQuotaUsed = null,
         DEFAULTBYTESREQUESTED = 100 * 1024 * 1024;
@@ -40,12 +41,10 @@ define( [ 'jquery' ], function( $ ) {
     getCurrentQuota = function() {
         return currentQuota;
     };
+
     getCurrentQuotaUsed = function() {
         return currentQuotaUsed;
     };
-    //function getFS ( ) {
-    //  return fs;
-    //};
 
     /**
      * Initializes the File Manager
@@ -58,8 +57,23 @@ define( [ 'jquery' ], function( $ ) {
         supported = ( typeof window.requestFileSystem !== 'undefined' && typeof window.resolveLocalFileSystemURL !== 'undefined' && typeof navigator.webkitPersistentStorage !== 'undefined' );
         console.log( 'supported: ', supported );
         if ( supported ) {
-            var that = this;
             setCurrentQuotaUsed();
+            filesystemReady = getFilesystem();
+            return true;
+        } else {
+            console.log( 'filesystem API not supported in this browser' );
+            return false;
+        }
+    };
+
+    /**
+     * Returns jquery promise object that will be resolved when the user has approved the use of the filesystem
+     * @return {*} jquery promise object
+     */
+    getFilesystem = function() {
+        //var deferred = $.Deferred();
+
+        if ( !fs ) {
             requestQuota(
                 DEFAULTBYTESREQUESTED, {
                     success: function( grantedBytes ) {
@@ -67,8 +81,7 @@ define( [ 'jquery' ], function( $ ) {
                             grantedBytes, {
                                 success: function( fsys ) {
                                     fs = fsys;
-                                    console.log( 'got filesystem', fs );
-                                    $( document ).trigger( 'filesystemready' );
+                                    deferred.resolve();
                                 },
                                 error: function( e ) {
                                     errorHandler( e );
@@ -79,11 +92,10 @@ define( [ 'jquery' ], function( $ ) {
                     error: errorHandler
                 }
             );
-            return true;
         } else {
-            console.log( 'filesystem API not supported in this browser' );
-            return false;
+            deferred.resolve();
         }
+        return deferred.promise();
     };
 
     /**
@@ -91,21 +103,19 @@ define( [ 'jquery' ], function( $ ) {
      * @param  {{success:Function, error:Function}} callbacks callback functions (error, and success)
      */
     setDir = function( dirName, callbacks ) {
-        var currentSuccessCb = callbacks.success,
-            that = this;
+        var currentSuccessCb = callbacks.success;
+
         if ( dirName && dirName.length > 0 ) {
+
             callbacks.success = function( dirEntry ) {
                 currentDir = dirName;
                 currentSuccessCb();
             };
-            if ( typeof fs == "undefined" ) {
-                console.log( 'fs not yet defined, waiting for filesystemready event' );
-                $( document ).on( 'filesystemready', function() {
-                    that.createDir( dirName, callbacks );
-                } );
-            } else {
-                this.createDir( dirName, callbacks );
-            }
+
+            filesystemReady.done( function() {
+                createDir( dirName, callbacks );
+            } );
+
         } else {
             console.error( 'directory name empty or missing' );
             return false;
@@ -222,17 +232,8 @@ define( [ 'jquery' ], function( $ ) {
      * @param  {Object.<string, Function>}  callbacks callback functions (error, and success)
      */
     saveFile = function( file, callbacks ) {
-        var that = this;
 
-        if ( typeof fs == "undefined" ) {
-            $( document ).on( 'filesystemready', function() {
-                saveThisFile();
-            } );
-        } else {
-            saveThisFile();
-        }
-
-        function saveThisFile() {
+        filesystemReady.done( function() {
             console.log( 'saving file with url: ', getDirPrefix() + file.name );
             fs.root.getFile(
                 getDirPrefix() + file.name, {
@@ -265,7 +266,7 @@ define( [ 'jquery' ], function( $ ) {
                                         success: function( bytes ) {
                                             console.log( 'request for additional quota approved! (quota: ' + bytes + ' bytes)' );
                                             currentQuota = bytes;
-                                            that.saveFile( file, callbacks );
+                                            saveFile( file, callbacks );
                                         },
                                         error: callbacks.error
                                     }
@@ -278,7 +279,7 @@ define( [ 'jquery' ], function( $ ) {
                 },
                 callbacks.error
             );
-        }
+        } );
     };
 
     /**
@@ -311,6 +312,13 @@ define( [ 'jquery' ], function( $ ) {
         } );
     };
 
+    // retrieve a local filesystem URL if the file exists
+    retrieveFileUrl = function( directoryName, fileName ) {
+
+    };
+
+
+
     /**
      * Obtains a fileEntry (asynchronously)
      * @param  {string}                             fullPath    full filesystem path to the file
@@ -318,21 +326,19 @@ define( [ 'jquery' ], function( $ ) {
      */
     retrieveFileEntry = function( fullPath, callbacks ) {
         console.debug( 'retrieving fileEntry for: ' + fullPath );
-        fs.root.getFile( fullPath, {},
-            function( fileEntry ) {
-                console.log( 'fileEntry retrieved: ', fileEntry, 'persistent URL: ', fileEntry.toURL() );
-                callbacks.success( fileEntry );
-            },
-            function( e ) {
-                console.error( 'file with path: ' + fullPath + ' not found', e );
-                callbacks.error( e );
-            }
-        );
-    };
 
-    // retrieve a local filesystem URL if the file exists
-    retrieveFileUrl = function( directoryName, fileName ) {
-
+        filesystemReady.done( function() {
+            fs.root.getFile( fullPath, {},
+                function( fileEntry ) {
+                    console.log( 'fileEntry retrieved: ', fileEntry, 'persistent URL: ', fileEntry.toURL() );
+                    callbacks.success( fileEntry );
+                },
+                function( e ) {
+                    console.error( 'file with path: ' + fullPath + ' not found', e );
+                    callbacks.error( e );
+                }
+            );
+        } );
     };
 
     /**
@@ -358,21 +364,23 @@ define( [ 'jquery' ], function( $ ) {
             error: function() {}
         };
         //console.log('amount of storage used: '+this.getStorageUsed());
-        fs.root.getFile( getDirPrefix() + fileName, {
-                create: false
-            },
-            function( fileEntry ) {
-                fileEntry.remove( function() {
-                    setCurrentQuotaUsed();
-                    console.log( fileName + ' removed from file system' );
-                    callbacks.success();
-                } );
-            },
-            function( e ) {
-                errorHandler( e );
-                callbacks.error();
-            }
-        );
+        filesystemReady.done( function() {
+            fs.root.getFile( getDirPrefix() + fileName, {
+                    create: false
+                },
+                function( fileEntry ) {
+                    fileEntry.remove( function() {
+                        setCurrentQuotaUsed();
+                        console.log( fileName + ' removed from file system' );
+                        callbacks.success();
+                    } );
+                },
+                function( e ) {
+                    errorHandler( e );
+                    callbacks.error();
+                }
+            );
+        } );
     };
 
     /**
@@ -381,41 +389,43 @@ define( [ 'jquery' ], function( $ ) {
      * @param  {{success: Function, error: Function}}   callbacks callback functions (error, and success)
      */
     createDir = function( name, callbacks ) {
-        var that = this;
 
         callbacks = callbacks || {
             success: function() {},
             error: function() {}
         };
-        fs.root.getDirectory( name, {
-                create: true
-            },
-            function( dirEntry ) {
-                setCurrentQuotaUsed();
-                console.log( 'Directory: ' + name + ' created (or found)', dirEntry );
-                callbacks.success();
-            },
-            function( e ) {
-                console.log( 'error during creation of directory', e );
-                var newBytesRequest; //,
-                if ( e instanceof FileError && e.code === window.FileError.QUOTA_EXCEEDED_ERR ) {
-                    console.log( 'Required storage exceeding quota, going to request more.' );
-                    newBytesRequest = ( ( e.total * 5 ) < DEFAULTBYTESREQUESTED ) ? currentQuota + DEFAULTBYTESREQUESTED : currentQuota + ( 5 * e.total );
-                    requestQuota(
-                        newBytesRequest, {
-                            success: function( bytes ) {
-                                currentQuota = bytes;
-                                that.createDir( name, callbacks );
-                            },
-                            error: callbacks.error
-                        }
-                    );
-                } else {
-                    callbacks.error( e );
+
+        filesystemReady.done( function() {
+            fs.root.getDirectory( name, {
+                    create: true
+                },
+                function( dirEntry ) {
+                    setCurrentQuotaUsed();
+                    console.log( 'Directory: ' + name + ' created (or found)', dirEntry );
+                    callbacks.success();
+                },
+                function( e ) {
+                    console.log( 'error during creation of directory', e );
+                    var newBytesRequest; //,
+                    if ( e instanceof FileError && e.code === window.FileError.QUOTA_EXCEEDED_ERR ) {
+                        console.log( 'Required storage exceeding quota, going to request more.' );
+                        newBytesRequest = ( ( e.total * 5 ) < DEFAULTBYTESREQUESTED ) ? currentQuota + DEFAULTBYTESREQUESTED : currentQuota + ( 5 * e.total );
+                        requestQuota(
+                            newBytesRequest, {
+                                success: function( bytes ) {
+                                    currentQuota = bytes;
+                                    createDir( name, callbacks );
+                                },
+                                error: callbacks.error
+                            }
+                        );
+                    } else {
+                        callbacks.error( e );
+                    }
                 }
-            }
-            //TODO: ADD similar request for additional storage if FileError.QUOTA_EXCEEEDED_ERR is thrown as done in saveFile()
-        );
+                //TODO: ADD similar request for additional storage if FileError.QUOTA_EXCEEEDED_ERR is thrown as done in saveFile()
+            );
+        } );
     };
 
     /**
@@ -424,27 +434,32 @@ define( [ 'jquery' ], function( $ ) {
      * @param {{success: Function, error: Function}}    callbacks   callback functions (error, and success)
      */
     deleteDir = function( name, callbacks ) {
-        //check if filesystem is ready?
+
         callbacks = callbacks || {
             success: function() {},
             error: function() {}
         };
-        console.log( 'going to delete directory: ' + name );
-        fs.root.getDirectory( name, {},
-            function( dirEntry ) {
-                dirEntry.removeRecursively(
-                    function() {
-                        setCurrentQuotaUsed();
-                        callbacks.success();
-                    },
-                    function( e ) {
-                        errorHandler( e );
-                        callbacks.error();
-                    }
-                );
-            },
-            errorHandler
-        );
+
+        console.log( 'going to delete filesystem directory: ' + name );
+
+        filesystemReady.done( function() {
+            console.log( 'fs is ready, going for it!' );
+            fs.root.getDirectory( name, {},
+                function( dirEntry ) {
+                    dirEntry.removeRecursively(
+                        function() {
+                            setCurrentQuotaUsed();
+                            callbacks.success();
+                        },
+                        function( e ) {
+                            errorHandler( e );
+                            callbacks.error();
+                        }
+                    );
+                },
+                errorHandler
+            );
+        } );
     };
 
     /**
@@ -476,14 +491,9 @@ define( [ 'jquery' ], function( $ ) {
             complete: callbackComplete
         };
 
-        //check if filesystem is ready
-        if ( typeof fs == "undefined" ) {
-            $( document ).on( 'filesystemready', function() {
-                traverseAll( process );
-            } );
-        } else {
-            traverseAll( process );
-        }
+        filesystemReady.done( function() {
+            _traverseAll( process );
+        } );
     };
 
     /**
@@ -507,14 +517,14 @@ define( [ 'jquery' ], function( $ ) {
                     callbackComplete();
                 }
             };
-        traverseAll( process );
+        _traverseAll( process );
     };
 
     /**
      * traverses all folders and files in root
      * @param  {{entryFound: Function, complete}} process [description]
      */
-    traverseAll = function( process ) {
+    _traverseAll = function( process ) {
         var entry, type,
             dirReader = fs.root.createReader();
 
