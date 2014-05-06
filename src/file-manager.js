@@ -30,7 +30,7 @@ define( [ 'jquery' ], function( $ ) {
     var getCurrentQuota, getCurrentQuotaUsed, supported, isSupported, fs, init, setDir, requestQuota,
         requestFileSystem, errorHandler, setCurrentQuotaUsed, _traverseAll, saveFile, retrieveFile,
         retrieveFileUrl, retrieveFileEntry, retrieveFileFromFileEntry, deleteFile, createDir, deleteDir, currentDir,
-        deleteAll, getDirPrefix, listAll, getFilesystem, filesystemReady,
+        deleteAll, _getDirPrefix, listAll, getFilesystem, filesystemReady,
         deferred = $.Deferred(),
         currentQuota = null,
         currentQuotaUsed = null,
@@ -135,7 +135,7 @@ define( [ 'jquery' ], function( $ ) {
      * @param  {string=} dirName the dirName to use if provided, otherwise the current directory name is used
      * @return {string} returns the path prefix or '/' (root)
      */
-    getDirPrefix = function( dirName ) {
+    _getDirPrefix = function( dirName ) {
         return ( dirName ) ? '/' + dirName + '/' : ( currentDir ) ? '/' + currentDir + '/' : '/';
     };
 
@@ -234,9 +234,9 @@ define( [ 'jquery' ], function( $ ) {
     saveFile = function( file, callbacks ) {
 
         filesystemReady.done( function() {
-            console.log( 'saving file with url: ', getDirPrefix() + file.name );
+            console.log( 'saving file with url: ', _getDirPrefix() + file.name );
             fs.root.getFile(
-                getDirPrefix() + file.name, {
+                _getDirPrefix() + file.name, {
                     create: true,
                     exclusive: false
                 },
@@ -289,9 +289,8 @@ define( [ 'jquery' ], function( $ ) {
      * @param {{success:Function, error:Function}}  callbacks       callback functions (error, and success)
      */
     retrieveFile = function( directoryName, fileO, callbacks ) {
-        //check if filesystem is ready??
         var retrievedFile = {},
-            pathPrefix = getDirPrefix( directoryName ),
+            pathPrefix = _getDirPrefix( directoryName ),
             callbacksForFileEntry = {
                 success: function( fileEntry ) {
                     retrieveFileFromFileEntry( fileEntry, {
@@ -313,11 +312,16 @@ define( [ 'jquery' ], function( $ ) {
     };
 
     // retrieve a local filesystem URL if the file exists
-    retrieveFileUrl = function( directoryName, fileName ) {
+    retrieveFileUrl = function( directoryName, fileName, callbacks ) {
+        var pathPrefix = _getDirPrefix( directoryName );
 
+        retrieveFileEntry( pathPrefix + fileName, {
+            success: function( fileEntry ) {
+                callbacks.success( fileEntry.toURL() );
+            },
+            error: callbacks.error
+        } );
     };
-
-
 
     /**
      * Obtains a fileEntry (asynchronously)
@@ -365,7 +369,7 @@ define( [ 'jquery' ], function( $ ) {
         };
         //console.log('amount of storage used: '+this.getStorageUsed());
         filesystemReady.done( function() {
-            fs.root.getFile( getDirPrefix() + fileName, {
+            fs.root.getFile( _getDirPrefix() + fileName, {
                     create: false
                 },
                 function( fileEntry ) {
@@ -555,6 +559,7 @@ define( [ 'jquery' ], function( $ ) {
         getCurrentQuotaUsed: getCurrentQuotaUsed,
         saveFile: saveFile,
         retrieveFile: retrieveFile,
+        retrieveFileUrl: retrieveFileUrl,
         deleteFile: deleteFile,
         createDir: createDir,
         deleteDir: deleteDir,
