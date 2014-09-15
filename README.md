@@ -1,4 +1,4 @@
-fileManager
+File-system
 ===========
 
 A library that helps with storing files, retrieving, removing files using the FileSystem API. The Filesytem API is not stable and neither is this library. Consider this therefore _HIGHLY EXPERIMENTAL_

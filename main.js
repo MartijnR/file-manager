@@ -1,20 +1,20 @@
 requirejs.config( {
-  baseUrl: 'lib/',
-  paths: {
-    src: '../src'
-  }
+    baseUrl: 'lib/',
+    paths: {
+        src: '../src'
+    }
 } );
 
-requirejs( [ 'src/file-manager.js' ], function( fileManager ) {
+requirejs( [ 'src/file-system.js' ], function( fileManager ) {
 
-  console.log( 'loaded file manager!', fileManager );
+    console.log( 'loaded file manager!', fileManager );
 
-  fileManager.init( );
+    fileManager.init();
 
-  if ( fileManager.isSupported( ) ) {
-    console.log( 'and it is supported in this browser!' );
-  } else {
-    console.error( 'but it is not supported in this browser' );
-  }
+    if ( fileManager.isSupported() ) {
+        console.log( 'and it is supported in this browser!' );
+    } else {
+        console.error( 'but it is not supported in this browser' );
+    }
 
 } );

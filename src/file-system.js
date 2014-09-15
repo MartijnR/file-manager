@@ -1,4 +1,6 @@
 /**
+ * TODO this library is a bloody mess. Remove it from GitHub after moving to indexedDb.
+ *
  * This library copies liberally from http://www.html5rocks.com/en/tutorials/file/filesystem/#toc-filesystemurls
  * by Eric Bidelman. Thanks a lot, Eric!
  *
@@ -24,7 +26,7 @@
  * @constructor
  */
 
-define( [ 'jquery' ], function( $ ) {
+define( [ "jquery" ], function( $ ) {
     "use strict";
 
     var getCurrentQuota, getCurrentQuotaUsed, supported, isSupported, fs, init, setDir, requestQuota,
@@ -59,7 +61,7 @@ define( [ 'jquery' ], function( $ ) {
         if ( supported ) {
             setCurrentQuotaUsed();
             filesystemReady = getFilesystem();
-            return true;
+            return filesystemReady;
         } else {
             console.log( 'filesystem API not supported in this browser' );
             return false;
